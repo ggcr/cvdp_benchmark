@@ -171,9 +171,27 @@ When generating files, return the file name in the correct place at the folder s
         self.helpers = ModelHelpers(self.folders, self.schema)
 
     # ----------------------------------------
+    # - Helper Functions for Categories
+    # ----------------------------------------
+
+    def _get_category_and_difficulty(self, id: str):
+        """Return (category, difficulty) from context, both may be None."""
+        cats = self.context[id]['categories']
+        return (cats[0] if len(cats) > 0 else None, cats[1] if len(cats) > 1 else None)
+
+    @staticmethod
+    def _get_cat(categories):
+        """ Returns an int for cidXXX format, a string for custom categories, or None."""
+        if not categories or not isinstance(categories[0], str) or not categories[0]:
+            return None
+        if categories[0].startswith('cid'):
+            return int(categories[0][3:])
+        return categories[0]
+
+    # ----------------------------------------
     # - Helper Functions for Model Interaction
     # ----------------------------------------
-    
+
     def create_system_prompt(self, base_context=None, schema=None):
         """
         Create a system prompt for the model.
@@ -550,8 +568,8 @@ When generating files, return the file name in the correct place at the folder s
             Tuple of (tests, errors)
         """
         # Get the expected answer/reference
-        cat = int(self.context[id]['categories'][0][3:])
-        
+        cat = self._get_cat(self.context[id]['categories'])
+
         # Get reference from output.response for both Copilot and Agentic formats
         reference = None
         if 'subjective_reference' in self.context[id]:
@@ -865,11 +883,8 @@ When generating files, return the file name in the correct place at the folder s
                 error_msg = self.runs[id]['error_msg']
                 logging.warning(f"Skipping {id} due to preparation error: {error_msg}")
                 
-                # Use the real category and difficulty from the context
-                category = self.context[id]['categories'][0]
-                difficulty = self.context[id]['categories'][1]
-                
                 # Return an error result with the actual category and difficulty
+                category, difficulty = self._get_category_and_difficulty(id)
                 error_result = {
                     "category": category,
                     "difficulty": difficulty,
@@ -925,11 +940,8 @@ When generating files, return the file name in the correct place at the folder s
             error_msg = str(e)
             logging.error(f"Error in harness execution for {id}: {error_msg}")
             
-            # Use the real category and difficulty from the context
-            category = self.context[id]['categories'][0]
-            difficulty = self.context[id]['categories'][1]
-            
             # Always put something in the queue so the task is marked as complete
+            category, difficulty = self._get_category_and_difficulty(id)
             error_result = {
                 "category": category,
                 "difficulty": difficulty,
@@ -991,10 +1003,11 @@ When generating files, return the file name in the correct place at the folder s
 
     def run(self, id : str = "", obj : bool = False, repo : repository.Repository = None, model : OpenAI_Instance = None):
 
-        cat = int(self.context[id]['categories'][0][3:])
+        # Check if this is a subjective category (only for CVDP cidXXX format)
+        cat = self._get_cat(self.context[id]['categories'])
+        is_code_comprehension = isinstance(cat, int) and cat in CODE_COMPREHENSION_CATEGORIES
 
-        # Check if this is a subjective category
-        if cat in CODE_COMPREHENSION_CATEGORIES:
+        if is_code_comprehension:
             # Run subjective scoring for any mode - the method handles golden vs non-golden internally
             (tests, errors) = self.run_subjective_scoring(id, repo, model, obj)
         else:
@@ -1002,9 +1015,10 @@ When generating files, return the file name in the correct place at the folder s
             repo.debug = self.debug
             (tests, errors) = repo.obj()
 
+        category, difficulty = self._get_category_and_difficulty(id)
         result = {}
-        result['category']   = self.context[id]['categories'][0]
-        result['difficulty'] = self.context[id]['categories'][1]
+        result['category']   = category
+        result['difficulty'] = difficulty
         result['tests']      = tests
         result['errors']     = errors
 
@@ -1023,8 +1037,7 @@ When generating files, return the file name in the correct place at the folder s
         
         def create_error_result(id):
             """Create error result for failed preparation tasks"""
-            category = self.context[id]['categories'][0]
-            difficulty = self.context[id]['categories'][1]
+            category, difficulty = self._get_category_and_difficulty(id)
             return {
                 "category": category,
                 "difficulty": difficulty,
@@ -1093,10 +1106,12 @@ class CopilotProcessor (DatasetProcessor):
                 # ----------------------------------------
                 # - Add subjective.txt for response if available in code comprehension categories
                 # ----------------------------------------
-                
-                # Check if this is a subjective category
-                cat = int(context['categories'][0][3:])
-                if cat in CODE_COMPREHENSION_CATEGORIES:
+
+                # Check if this is a subjective category (only for CVDP cidXXX format)
+                cat = self._get_cat(context['categories'])
+                is_code_comprehension = isinstance(cat, int) and cat in CODE_COMPREHENSION_CATEGORIES
+
+                if is_code_comprehension:
                     # Add response to subjective.txt for evaluation if it exists
                     if 'response' in context['output'] and context['output']['response']:
                         # Add response to subjective.txt for evaluation
@@ -1121,12 +1136,9 @@ class CopilotProcessor (DatasetProcessor):
             # ----------------------------------------
             # For code comprehension categories, we want the response to go into subjective.txt
             # rather than into the patch files listed in output context
-            cat = None
-            is_code_comprehension = False
-            if 'categories' in context and context['categories'] and isinstance(context['categories'][0], str) and context['categories'][0].startswith('cid'):
-                cat = int(context['categories'][0][3:])
-                is_code_comprehension = cat in CODE_COMPREHENSION_CATEGORIES
-            
+            cat = self._get_cat(context.get('categories', []))
+            is_code_comprehension = isinstance(cat, int) and cat in CODE_COMPREHENSION_CATEGORIES
+
             if is_code_comprehension:
                 # Override files list to empty - this will trigger response mode
                 # and the response will be captured in subjective.txt
@@ -1165,14 +1177,8 @@ class CopilotProcessor (DatasetProcessor):
 
                 try:
                     if model != None:
-                        cat = None
-                        if 'categories' in self.context[id] and self.context[id]['categories'] and isinstance(self.context[id]['categories'][0], str) and self.context[id]['categories'][0].startswith('cid'):
-                            cat = int(self.context[id]['categories'][0][3:])
                         output, success = model.prompt(prompt, schema=schema_to_use, prompt_log=logfile, files=files, timeout=MODEL_TIMEOUT, category=cat)
                     elif self.model != None:
-                        cat = None
-                        if 'categories' in self.context[id] and self.context[id]['categories'] and isinstance(self.context[id]['categories'][0], str) and self.context[id]['categories'][0].startswith('cid'):
-                            cat = int(self.context[id]['categories'][0][3:])
                         output, success = self.model.prompt(prompt, schema=schema_to_use, prompt_log=logfile, files=files, timeout=MODEL_TIMEOUT, category=cat)
                     else:
                         raise ValueError("Unable to execute harness without an model assigned.")
