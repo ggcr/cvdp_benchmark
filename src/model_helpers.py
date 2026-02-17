@@ -37,21 +37,7 @@ When generating files, return the file name in the correct place at the folder s
             '{ "code": [{ "<name>" : "<code>"}] }',
             '{ "response": "<response>" }'
         ]
-        
-    def create_system_prompt(self, base_context=None, schema=None, category=None):
-        """
-        Create a system prompt for the model.
-        
-        Args:
-            base_context: Base context to use (defaults to self.folders)
-            schema: Optional JSON schema for structured output
-            category: Optional integer indicating the category/problem ID
-            
-        Returns:
-            The formatted system prompt
-        """
-        system_prompt = base_context if base_context is not None else self.folders
-        
+
         # Add category information if provided
         # Define category-specific guidance messages
         self.category_guidance = {
@@ -69,6 +55,21 @@ When generating files, return the file name in the correct place at the folder s
             14: "You are solving a 'Test Plan to Assertions Generation' problem. To solve this problem correctly, you should only respond with the assertions for the testbench based on the test plan specification.",
             16: "You are solving an 'RTL Debugging and Bug Fixing' problem. To solve this problem correctly, you should only respond with the RTL code that is debugged and fixed to address the bug."
         }
+        
+    def create_system_prompt(self, base_context=None, schema=None, category=None):
+        """
+        Create a system prompt for the model.
+        
+        Args:
+            base_context: Base context to use (defaults to self.folders)
+            schema: Optional JSON schema for structured output
+            category: Optional integer indicating the category/problem ID
+            
+        Returns:
+            The formatted system prompt
+        """
+        system_prompt = base_context if base_context is not None else self.folders
+        
         if category is not None and category in self.category_guidance:
             system_prompt += f"\n{self.category_guidance[category]}\n"
         else:
