@@ -205,24 +205,28 @@ class Report:
         problem_results    = {}  # Track results per problem ID
         failing_tests      = []  # Track all failing tests
         passing_tests      = []  # Track all passing tests
-        scores_by_problem = {}  # Track scores per problem for score-based categories (BLEU, LLM, etc.)
+        scores_by_problem = {}   # Track scores per problem for score-based categories (BLEU, LLM, etc.)
 
         for id, report in self.raw_logs.items():
 
-            category = report['category']
-            diff     = report['difficulty']
+            category = report.get('category', None)
+            diff     = report.get('difficulty', None)
 
-            if category not in self.categories:
+            if category is not None and category not in self.categories:
 
                 self.categories[category] = {}
-                self.categories[category]['easy'] = {}
-                self.categories[category]['medium'] = {}
-                self.categories[category]['hard'] = {}
                 self.categories[category]['logs'] = []
-
-                self.update_category(self.categories[category]['easy'])
-                self.update_category(self.categories[category]['medium'])
-                self.update_category(self.categories[category]['hard'])
+                if diff is not None:
+                    self.categories[category]['easy'] = {}
+                    self.categories[category]['medium'] = {}
+                    self.categories[category]['hard'] = {}
+                    self.update_category(self.categories[category]['easy'])
+                    self.update_category(self.categories[category]['medium'])
+                    self.update_category(self.categories[category]['hard'])
+                else:
+                    # If difficulty category is not provided
+                    # Report results on top of the self.categories[category] directly
+                    self.update_category(self.categories[category])
 
             # ----------------------------------------
             # - Update category report
@@ -243,14 +247,10 @@ class Report:
                     category_num = int(category[3:])
                 elif category.isdigit():
                     category_num = int(category)
-                else:
-                    # Try to extract numeric part from the end if it's a mixed format
-                    import re
-                    match = re.search(r'(\d+)$', category)
-                    if match:
-                        category_num = int(match.group(1))
             except (ValueError, AttributeError):
                 pass
+
+            categories = self.categories[category][diff] if diff is not None else self.categories[category]
 
             for test_idx, test in enumerate(report['tests']):
 
@@ -259,7 +259,7 @@ class Report:
                 # Collect scores for score-based categories (BLEU, LLM, etc.)
                 if category_num is not None and is_score_based_category(category_num):
                     score_value = None
-                    
+
                     # Collect BLEU scores for BLEU categories
                     if 'bleu_score' in test:
                         score_value = test['bleu_score']
@@ -267,14 +267,14 @@ class Report:
                     elif 'llm_score' in test:
                         score_value = test['llm_score']
                     # Other score types can be added here in the future
-                    
+
                     if score_value is not None:
                         if id not in scores_by_problem:
                             scores_by_problem[id] = []
                         scores_by_problem[id].append(score_value)
 
                 if test['result'] == 0:
-                    self.categories[category][diff]['Passed Tests'] += 1
+                    categories['Passed Tests'] += 1
                     # Add to passing tests list
                     passing_tests.append({
                         'test_id': id,
@@ -284,7 +284,7 @@ class Report:
                         'log': test.get('log')
                     })
                 else:
-                    self.categories[category][diff]['Failed Tests'] += 1
+                    categories['Failed Tests'] += 1
                     # Mark this problem as failed if any test fails
                     problem_results[id]['all_tests_pass'] = False
                     # Add to failing tests list with error info
@@ -298,15 +298,11 @@ class Report:
                         'log': test.get('log')
                     })
 
-                self.categories[category][diff]['Total Tests'] += 1
+                categories['Total Tests'] += 1
+                categories['Passed Tests (%)'] = categories['Passed Tests'] / categories['Total Tests'] * 100
 
                 # Should be changed from original folder too
                 self.categories[category]['logs'].append({"id" : id, "log" : test['log']})
-
-                total = self.categories[category][diff]['Total Tests']
-                passd = self.categories[category][diff]['Passed Tests']
-
-                self.categories[category][diff]['Passed Tests (%)'] = (passd / total) * 100
 
                 # ----------------------------------------
                 # - Calculate average execution time
@@ -322,9 +318,9 @@ class Report:
 
         # Update problem statistics after all tests are processed
         for id, result in problem_results.items():
-            category = result['category']
-            diff = result['difficulty']
-            
+            category = result.get('category', None)
+            diff = result.get('difficulty', None)
+
             # Get category number for BLEU scoring logic
             category_num = None
             try:
@@ -332,18 +328,14 @@ class Report:
                     category_num = int(category[3:])
                 elif category.isdigit():
                     category_num = int(category)
-                else:
-                    # Try to extract numeric part from the end if it's a mixed format
-                    import re
-                    match = re.search(r'(\d+)$', category)
-                    if match:
-                        category_num = int(match.group(1))
             except (ValueError, AttributeError):
                 pass
-            
+
+            categories = self.categories[category][diff] if diff is not None else self.categories[category]
+
             # Increment total problems
-            self.categories[category][diff]['Total Problems'] += 1
-            
+            categories['Total Problems'] += 1
+
             # Use configurable scoring based on category mode
             if category_num is not None and is_score_based_category(category_num):
                 # Score-based scoring: use average score (0-1) as fractional pass rate
@@ -352,29 +344,25 @@ class Report:
                     if scores:
                         avg_score = sum(scores) / len(scores)
                         # Store the average score as the problem "pass" score
-                        self.categories[category][diff]['Passed Problems'] += avg_score  # Fractional score
-                        self.categories[category][diff]['Failed Problems'] += (1 - avg_score)  # Fractional failure
+                        categories['Passed Problems'] += avg_score  # Fractional score
+                        categories['Failed Problems'] += (1 - avg_score)  # Fractional failure
                     else:
                         # No scores found, treat as failed
-                        self.categories[category][diff]['Failed Problems'] += 1
+                        categories['Failed Problems'] += 1
                 else:
                     # No scores available for score-based category, treat as failed
-                    self.categories[category][diff]['Failed Problems'] += 1
+                    categories['Failed Problems'] += 1
             else:
                 # Traditional threshold-based binary pass/fail logic
                 if result['all_tests_pass']:
-                    self.categories[category][diff]['Passed Problems'] += 1
+                    categories['Passed Problems'] += 1
                 else:
-                    self.categories[category][diff]['Failed Problems'] += 1
-                
+                    categories['Failed Problems'] += 1
+
             # Calculate pass percentage for problems
-            total_problems = self.categories[category][diff]['Total Problems']
-            passed_problems = self.categories[category][diff]['Passed Problems']
-            
-            if total_problems > 0:
-                self.categories[category][diff]['Passed Problems (%)'] = (passed_problems / total_problems) * 100
-            else:
-                self.categories[category][diff]['Passed Problems (%)'] = 0
+            total_problems = categories['Total Problems']
+            passed_problems = categories['Passed Problems']
+            categories['Passed Problems (%)'] = (passed_problems / total_problems * 100) if total_problems > 0 else 0
 
         # Store scores in the raw result data for future reference
         if scores_by_problem:
@@ -387,11 +375,6 @@ class Report:
                             category_num = int(category[3:])
                         elif category.isdigit():
                             category_num = int(category)
-                        else:
-                            import re
-                            match = re.search(r'(\d+)$', category)
-                            if match:
-                                category_num = int(match.group(1))
                     except (ValueError, AttributeError):
                         pass
                     
