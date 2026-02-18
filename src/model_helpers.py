@@ -38,7 +38,6 @@ When generating files, return the file name in the correct place at the folder s
             '{ "response": "<response>" }'
         ]
 
-        # Add category information if provided
         # Define category-specific guidance messages
         self.category_guidance = {
             2: "You are solving an 'RTL Code Completion' problem. To solve this problem correctly, you should only respond with the RTL code generated according to the requirements.",
@@ -70,10 +69,9 @@ When generating files, return the file name in the correct place at the folder s
         """
         system_prompt = base_context if base_context is not None else self.folders
         
+        # Add category information if provided
         if category is not None and category in self.category_guidance:
             system_prompt += f"\n{self.category_guidance[category]}\n"
-        else:
-            assert False, f"Category {category} is not a valid category"
 
         # Add guidance about timescale for code generation categories
         # [TODO] Should enable this on a further release since it's a fundamental assumption for many problems
