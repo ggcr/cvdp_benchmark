@@ -46,12 +46,14 @@ def extract_category_number(category_id: str) -> int:
         return int(category_id)
     else:
         # Try to extract numeric part from the end if it's a mixed format
+        """
         import re
         match = re.search(r'(\d+)$', category_id)
         if match:
             return int(match.group(1))
         else:
             raise ValueError(f"Unknown category format: {category_id}. Expected 'cid<number>', '<number>', or '<text><number>' format.")
+        """ 
 
 def extract_problem_id_from_test_id(test_id: str) -> str:
     """
@@ -194,45 +196,54 @@ class ResultParser:
             # Skip the test_details and metadata sections - they're not categories
             if cid in ['test_details', 'metadata']:
                 continue
-                
+
             # Create CategoryStats if it doesn't exist yet
             if cid not in self.categories:
                 self.categories[cid] = CategoryStats(cid)
-                
+
             category_stats = self.categories[cid]
-            
-            for difficulty in ['easy', 'medium', 'hard']:
-                if difficulty in results:
-                    stats = DifficultyStats(
-                        passed_tests=results[difficulty]['Passed Tests'],
-                        failed_tests=results[difficulty]['Failed Tests'],
-                        total_tests=results[difficulty]['Total Tests'],
-                        test_pass_percentage=results[difficulty]['Passed Tests (%)'],
-                        passed_problems=results[difficulty]['Passed Problems'],
-                        failed_problems=results[difficulty]['Failed Problems'],
-                        total_problems=results[difficulty]['Total Problems'],
-                        problem_pass_percentage=results[difficulty]['Passed Problems (%)']
-                    )
-                    
-                    # Update category-specific stats
-                    setattr(category_stats, difficulty, stats)
-                    
-                    # Update category totals for tests
-                    category_stats.total_passed_tests += stats.passed_tests
-                    category_stats.total_failed_tests += stats.failed_tests
-                    category_stats.total_tests += stats.total_tests
-                    
-                    # Update category totals for problems
-                    category_stats.total_passed_problems += stats.passed_problems
-                    category_stats.total_failed_problems += stats.failed_problems
-                    category_stats.total_problems += stats.total_problems
-            
+
+            has_difficulty = any(d in results for d in ['easy', 'medium', 'hard'])
+
+            if has_difficulty:
+                for difficulty in ['easy', 'medium', 'hard']:
+                    if difficulty in results:
+                        stats = DifficultyStats(
+                            passed_tests=results[difficulty]['Passed Tests'],
+                            failed_tests=results[difficulty]['Failed Tests'],
+                            total_tests=results[difficulty]['Total Tests'],
+                            test_pass_percentage=results[difficulty]['Passed Tests (%)'],
+                            passed_problems=results[difficulty]['Passed Problems'],
+                            failed_problems=results[difficulty]['Failed Problems'],
+                            total_problems=results[difficulty]['Total Problems'],
+                            problem_pass_percentage=results[difficulty]['Passed Problems (%)']
+                        )
+
+                        setattr(category_stats, difficulty, stats)
+
+                        category_stats.total_passed_tests += stats.passed_tests
+                        category_stats.total_failed_tests += stats.failed_tests
+                        category_stats.total_tests += stats.total_tests
+
+                        category_stats.total_passed_problems += stats.passed_problems
+                        category_stats.total_failed_problems += stats.failed_problems
+                        category_stats.total_problems += stats.total_problems
+            else:
+                if 'Passed Tests' in results:
+                    category_stats.total_passed_tests = results['Passed Tests']
+                    category_stats.total_failed_tests = results['Failed Tests']
+                    category_stats.total_tests = results['Total Tests']
+
+                    category_stats.total_passed_problems = results['Passed Problems']
+                    category_stats.total_failed_problems = results['Failed Problems']
+                    category_stats.total_problems = results['Total Problems']
+
             # Calculate overall pass percentage for the category tests
             if category_stats.total_tests > 0:
                 category_stats.overall_test_pass_percentage = (
                     category_stats.total_passed_tests / category_stats.total_tests
                 ) * 100
-                
+
             # Calculate overall pass percentage for the category problems
             if category_stats.total_problems > 0:
                 category_stats.overall_problem_pass_percentage = (
@@ -252,39 +263,43 @@ class ResultParser:
     def _parse_existing_pass_at_k(self) -> None:
         """Parse pass@k data that was already calculated."""
         pass_at_k_data = self.raw_results['pass_at_k']
-        
+
         # Process category statistics
         if 'categories' in pass_at_k_data:
             for cid, results in pass_at_k_data['categories'].items():
                 # Create CategoryStats if it doesn't exist yet
                 if cid not in self.categories:
                     self.categories[cid] = CategoryStats(cid)
-                    
+
                 category_stats = self.categories[cid]
-                
-                for difficulty in ['easy', 'medium', 'hard']:
-                    if difficulty in results:
-                        stats = DifficultyStats(
-                            passed_tests=results[difficulty]['Passed Tests'],
-                            failed_tests=results[difficulty]['Failed Tests'],
-                            total_tests=results[difficulty]['Total Tests'],
-                            test_pass_percentage=results[difficulty]['Passed Tests (%)'],
-                            passed_problems=results[difficulty]['Passed Problems'],
-                            failed_problems=results[difficulty]['Failed Problems'],
-                            total_problems=results[difficulty]['Total Problems'],
-                            problem_pass_percentage=results[difficulty]['Passed Problems (%)']
-                        )
-                        
-                        # Update category-specific stats
-                        setattr(category_stats, difficulty, stats)
-                        
-                        # Update category totals
-                        # For composite reports, we only track problem statistics, not test statistics
-                        # since we're dealing with pass@k metrics at the problem level
-                        category_stats.total_passed_problems += stats.passed_problems
-                        category_stats.total_failed_problems += stats.failed_problems
-                        category_stats.total_problems += stats.total_problems
-                
+
+                has_difficulty = any(d in results for d in ['easy', 'medium', 'hard'])
+
+                if has_difficulty:
+                    for difficulty in ['easy', 'medium', 'hard']:
+                        if difficulty in results:
+                            stats = DifficultyStats(
+                                passed_tests=results[difficulty]['Passed Tests'],
+                                failed_tests=results[difficulty]['Failed Tests'],
+                                total_tests=results[difficulty]['Total Tests'],
+                                test_pass_percentage=results[difficulty]['Passed Tests (%)'],
+                                passed_problems=results[difficulty]['Passed Problems'],
+                                failed_problems=results[difficulty]['Failed Problems'],
+                                total_problems=results[difficulty]['Total Problems'],
+                                problem_pass_percentage=results[difficulty]['Passed Problems (%)']
+                            )
+
+                            setattr(category_stats, difficulty, stats)
+
+                            category_stats.total_passed_problems += stats.passed_problems
+                            category_stats.total_failed_problems += stats.failed_problems
+                            category_stats.total_problems += stats.total_problems
+                else:
+                    if 'Passed Problems' in results:
+                        category_stats.total_passed_problems = results['Passed Problems']
+                        category_stats.total_failed_problems = results['Failed Problems']
+                        category_stats.total_problems = results['Total Problems']
+
                 # Calculate overall percentages
                 # For composite reports, we only calculate problem percentages since we don't track test statistics
                 if category_stats.total_problems > 0:
@@ -379,10 +394,11 @@ class ResultParser:
                                             if any(p.get("id") == problem_id for p in cat_data[level]["problems"]):
                                                 difficulty = level
                                                 break
-                                    
-                                    # If we still can't determine difficulty, that's an error
+
+                                    # If we still can't determine difficulty, allow it to be None
+                                    # This is valid for custom datasets that don't follow CVDP difficulty structure
                                     if not difficulty:
-                                        raise ValueError(f"Could not determine difficulty for problem {problem_id} in category {category}. This indicates a data structure issue.")
+                                        difficulty = None
                             
                             # Add the problem to the tracking dictionary
                             problem_ids[problem_id] = {"category": category, "difficulty": difficulty}
@@ -639,20 +655,21 @@ class ResultParser:
         for problem_id, data in problem_results.items():
             category = data["category"]
             difficulty = data["difficulty"]
-            
+
             if category not in categories_stats:
                 categories_stats[category] = {
                     "easy": {"passed": 0, "failed": 0, "total": 0, "pass_probability": 0.0},
                     "medium": {"passed": 0, "failed": 0, "total": 0, "pass_probability": 0.0},
-                    "hard": {"passed": 0, "failed": 0, "total": 0, "pass_probability": 0.0}
+                    "hard": {"passed": 0, "failed": 0, "total": 0, "pass_probability": 0.0},
+                    None: {"passed": 0, "failed": 0, "total": 0, "pass_probability": 0.0}  # For categories without difficulty
                 }
-            
+
             if data.get("is_score_based", False):
                 # For score-based categories, use the average score across samples as the pass probability
                 scores = data["scores_in_samples"]
                 avg_score = sum(scores) / len(scores)  # Average score across all samples
                 pass_probability = avg_score  # Score is already in 0-1 range for BLEU
-                
+
                 # Update pass count for distribution tracking (use average score)
                 data["pass_count"] = avg_score * self.n_samples
             else:
@@ -661,13 +678,13 @@ class ResultParser:
                 # where c is the pass count, n is total samples, k is the threshold
                 pass_rate = data["pass_count"] / self.n_samples
                 pass_probability = 1.0 - ((1.0 - pass_rate) ** self.k_threshold)
-            
+
             # Store probability for each problem
             data["pass_probability"] = pass_probability
-            
+
             # Count the problem for the category/difficulty stats
             categories_stats[category][difficulty]["total"] += 1
-            
+
             # Accumulate the probability for the category/difficulty stats
             categories_stats[category][difficulty]["pass_probability"] += pass_probability
             
@@ -710,9 +727,11 @@ class ResultParser:
                     total_problems=counts["total"],
                     problem_pass_percentage=pass_percent
                 )
-                
+
                 # Update category-specific stats
-                setattr(category_stats, difficulty, stats)
+                # Skip setattr for None difficulty (can't set None as attribute name)
+                if difficulty is not None:
+                    setattr(category_stats, difficulty, stats)
                 
                 # Update category totals with fractional counts
                 # For composite reports, we only track problem statistics, not test statistics
@@ -752,23 +771,33 @@ class ResultParser:
         composite_categories = {}
         for category, difficulty_data in categories_stats.items():
             composite_categories[category] = {}
-            
+
             for difficulty, counts in difficulty_data.items():
                 if counts["total"] == 0:
                     continue
-                    
+
                 # Calculate pass rate based on accumulated probabilities
                 # This is the average pass@k probability across all problems
                 avg_probability = counts["pass_probability"] / counts["total"] * 100
-                
+
                 # Create stats structure with fractional counts
-                composite_categories[category][difficulty] = {
-                    "Passed Problems": round(counts["passed"], 2),  # Round to 2 decimal places for readability
-                    "Failed Problems": round(counts["failed"], 2),
-                    "Total Problems": counts["total"],
-                    "Passed Problems (%)": avg_probability,  # This is now directly the average pass@k probability
-                    "Pass@k Probability (%)": avg_probability
-                }
+                # If difficulty is None, store at top level of category
+                if difficulty is None:
+                    composite_categories[category].update({
+                        "Passed Problems": round(counts["passed"], 2),  # Round to 2 decimal places for readability
+                        "Failed Problems": round(counts["failed"], 2),
+                        "Total Problems": counts["total"],
+                        "Passed Problems (%)": avg_probability,  # This is now directly the average pass@k probability
+                        "Pass@k Probability (%)": avg_probability
+                    })
+                else:
+                    composite_categories[category][difficulty] = {
+                        "Passed Problems": round(counts["passed"], 2),  # Round to 2 decimal places for readability
+                        "Failed Problems": round(counts["failed"], 2),
+                        "Total Problems": counts["total"],
+                        "Passed Problems (%)": avg_probability,  # This is now directly the average pass@k probability
+                        "Pass@k Probability (%)": avg_probability
+                    }
         
         # Store the calculated pass@k data
         self.raw_results["pass_at_k"] = {
